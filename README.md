@@ -1,4 +1,4 @@
-## How Hen-and-Chicks Optimization (HACO) Finds Global Optimum Solution
+## Hen-and-Chicks Optimization (HACO) Finds Global Optimum Solution
 
 ### Akley Function
 ![Akley function](animation/Akley_function.gif)
