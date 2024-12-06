@@ -167,7 +167,7 @@ if __name__ == '__main__':
     lb = [-5]*d  # First variable float, second variable int
     ub = [5]*d  # First variable float, second variable int
 
-    # Variable types (float for the first variable, int for the second)
+    # Variable types (float for the first two variable, int for the last two variables)
     var_types = ['float', 'float', 'int', 'int']
 
     # Algorithm parameters
