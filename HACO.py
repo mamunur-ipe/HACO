@@ -2,41 +2,33 @@ import numpy as np
 import matplotlib.pyplot as plt
 import time
 
-# Function to calculate the step size based on the current iteration
+# Function to calculate the step size based on iteration
 def step_size(max_step, min_step, max_iteration, current_iteration):
-    """
-    Calculates the linearly decreasing step size from max_step to min_step over iterations.
-    """
+    # Linearly decreases the step size from max_step to min_step over iterations
     y = max_step + (min_step - max_step) / max_iteration * current_iteration
     return y
 
 # Function to find the best solution and its fitness value from the current population
 def find_best(X, Y):
-    """
-    Identifies the best solution in the population based on fitness values.
-    Returns the solution with the minimum fitness value and the corresponding value.
-    """
     idx_best = np.argmin(Y)  # Index of the minimum fitness value
     x_best = X[idx_best]     # Best solution
     y_best = Y[idx_best]     # Best fitness value
     return x_best, y_best
 
 # Main HACO (Hen and Chicks Optimization) algorithm
-def HACO(objective_function, lb, ub, population=30, probability_random_chicks=0.1,
+def HACO(objective_function, lb, ub, var_types, population=30, probability_random_chicks=0.1,
          max_step=0.5, min_step=0.01, max_iteration=500, max_run_time=300):
     """
-    Hen and Chicks Optimization algorithm for solving optimization problems.
-
     Parameters:
-    - objective_function: Function to minimize.
-    - lb: List of lower bounds for each decision variable.
-    - ub: List of upper bounds for each decision variable.
-    - population: Number of chicks in the population.
-    - probability_random_chicks: Probability of performing random search for exploration.
-    - max_step: Maximum step size for position updates.
-    - min_step: Minimum step size for position updates.
-    - max_iteration: Maximum number of iterations for the algorithm.
-    - max_run_time: Maximum allowable runtime in seconds.
+    - objective_function: Function to minimize
+    - lb: Lower bounds for decision variables
+    - ub: Upper bounds for decision variables
+    - var_types: List indicating the type of each variable ('float' or 'int')
+    - population: Number of chicks in the population
+    - probability_random_chicks: Probability of using random search
+    - max_step, min_step: Maximum and minimum step sizes
+    - max_iteration: Maximum number of iterations
+    - max_run_time: Maximum allowable runtime in seconds
     """
     start_time = time.process_time()  # Start the timer
 
@@ -51,7 +43,11 @@ def HACO(objective_function, lb, ub, population=30, probability_random_chicks=0.
     Y = np.zeros(population)  # Fitness values
 
     for i in range(population):
-        X[i, :] = lb + np.random.uniform(0, 1, no_variables) * (ub - lb)  # Random initialization
+        for j in range(no_variables):
+            if var_types[j] == 'float':
+                X[i, j] = lb[j] + np.random.uniform(0, 1) * (ub[j] - lb[j])  # Random initialization for floats
+            elif var_types[j] == 'int':
+                X[i, j] = np.random.randint(lb[j], ub[j] + 1)  # Random initialization for integers
         Y[i] = objective_function(X[i, :])  # Evaluate fitness
 
     # Find the initial best solution
@@ -64,17 +60,22 @@ def HACO(objective_function, lb, ub, population=30, probability_random_chicks=0.
     for k in range(max_iteration):
         current_step = step_size(max_step, min_step, max_iteration, k)  # Update step size
 
-        # Step 2: Update positions of chicks guided by the Hen (best solution)
+        # Step 2: Update the positions of the chicks guided by the Hen
         X1 = np.zeros([population, no_variables])
         Y1 = np.zeros(population)
         for i in range(population):
-            X1[i, :] = X[i, :] + current_step * np.random.uniform(-1, 1, no_variables) * (x_best - X[i, :])
+            for j in range(no_variables):
+                if var_types[j] == 'float':
+                    X1[i, j] = X[i, j] + current_step * np.random.uniform(-1, 1) * (x_best[j] - X[i, j])
+                elif var_types[j] == 'int':
+                    X1[i, j] = X[i, j] + current_step * np.random.uniform(-1, 1) * (x_best[j] - X[i, j])
+                    X1[i, j] = np.round(X1[i, j])  # Round to nearest integer for integer variables
 
             # Enforce boundary constraints
-            mask = X1[i, :] < lb
-            X1[i, :][mask] = lb[mask]
-            mask = X1[i, :] > ub
-            X1[i, :][mask] = ub[mask]
+            if var_types[j] == 'float':
+                X1[i, j] = np.clip(X1[i, j], lb[j], ub[j])  # Clipping for float variables
+            elif var_types[j] == 'int':
+                X1[i, j] = np.clip(np.round(X1[i, j]), lb[j], ub[j])  # Clip and round for integer variables
 
         # Evaluate fitness for updated positions
         for i in range(population):
@@ -85,27 +86,38 @@ def HACO(objective_function, lb, ub, population=30, probability_random_chicks=0.
         Y[mask] = Y1[mask]
         X[mask, :] = X1[mask, :]
 
-        # Step 4: Update positions of chicks guided by peers or random exploration
+        # Step 4:Update positions of chicks guided by peers or random exploration
         X2 = np.zeros([population, no_variables])
         Y2 = np.zeros(population)
         for i in range(population):
-            if np.random.random() >= probability_random_chicks:  # Guided by peers
-                # Select a peer randomly (not self or the best)
+            if np.random.random() >= probability_random_chicks:  # Guided by their peers
+                # Select a partner other than self and the best peer
                 while True:
                     idx = np.random.randint(0, population)
                     if idx != np.argmin(Y) and idx != i:
                         break
-                X2[i, :] = X[i, :] + current_step * np.random.uniform(-1, 1, no_variables) * (X[i, :] - X[idx, :])
-            else:  # Random exploration
-                X2[i, :] = lb + np.random.uniform(0, 1, no_variables) * (ub - lb)
+                for j in range(no_variables):
+                    if var_types[j] == 'float':
+                        X2[i, j] = X[i, j] + current_step * np.random.uniform(-1, 1) * (X[i, j] - X[idx, j])
+                    elif var_types[j] == 'int':
+                        X2[i, j] = X[i, j] + current_step * np.random.uniform(-1, 1) * (X[i, j] - X[idx, j])
+                        X2[i, j] = np.round(X2[i, j])  # Round to nearest integer for integer variables
+
+            else:  # Random chicks (exploration)
+                for j in range(no_variables):
+                    if var_types[j] == 'float':
+                        X2[i, j] = lb[j] + np.random.uniform(0, 1) * (ub[j] - lb[j])
+                    elif var_types[j] == 'int':
+                        X2[i, j] = np.random.randint(lb[j], ub[j] + 1)
 
             # Enforce boundary constraints
-            mask = X2[i, :] < lb
-            X2[i, :][mask] = lb[mask]
-            mask = X2[i, :] > ub
-            X2[i, :][mask] = ub[mask]
+            for j in range(no_variables):
+                if var_types[j] == 'float':
+                    X2[i, j] = np.clip(X2[i, j], lb[j], ub[j])  # Clipping for float variables
+                elif var_types[j] == 'int':
+                    X2[i, j] = np.clip(np.round(X2[i, j]), lb[j], ub[j])  # Clip and round for integer variables
 
-        # Evaluate fitness for updated solutions
+        # Evaluate fitness for updated positions of the chicks
         for i in range(population):
             Y2[i] = objective_function(X2[i, :])
 
@@ -120,7 +132,7 @@ def HACO(objective_function, lb, ub, population=30, probability_random_chicks=0.
         # Record the best objective value for this iteration
         history_best_obj_values.append(y_best)
 
-        # Print the current best solution and objective value
+        # print the current result
         print(f'Iteration:{k+1} Solution: {x_best} Objective: {np.min(Y)}')
 
         # Break the loop if maximum runtime is exceeded
@@ -128,21 +140,19 @@ def HACO(objective_function, lb, ub, population=30, probability_random_chicks=0.
         if (current_time - start_time) > max_run_time:
             break
 
-    # Plot the objective function value over iterations
-    plt.figure(dpi=300, figsize=(6, 4), constrained_layout=True)
-    plt.plot(range(1, len(history_best_obj_values) + 1), history_best_obj_values, color='r')
+    # create plot
+    plt.figure(dpi = 300, figsize =(6, 4), constrained_layout=True )
+    plt.plot( range(1, len(history_best_obj_values)+1), history_best_obj_values, color='r')
     plt.xlabel('Iterations')
-    plt.ylabel('Objective Function Value')
-    plt.title('Convergence of HACO Algorithm')
+    plt.ylabel('Objective function value')
     plt.show()
 
     return y_best, x_best
 
-
-# Example usage with the Ackley function
+# Example usage with the Ackley function (using both float and integer variables)
 if __name__ == '__main__':
-    # Ackley function (2D optimization problem)
-    d = 2  # Dimension
+    # Ackley Function
+    d = 4  # Dimension of the function
     def objective_function(xx):
         a = 20
         b = 0.2
@@ -154,8 +164,11 @@ if __name__ == '__main__':
         return term1 + term2 + a + np.exp(1)
 
     # Bounds for variables
-    lb = [-5] * d
-    ub = [5] * d
+    lb = [-5]*d  # First variable float, second variable int
+    ub = [5]*d  # First variable float, second variable int
+
+    # Variable types (float for the first variable, int for the second)
+    var_types = ['float', 'float', 'int', 'int']
 
     # Algorithm parameters
     population = 30
@@ -166,7 +179,7 @@ if __name__ == '__main__':
     max_run_time = 300
 
     # Run the HACO algorithm
-    y_best, x_best = HACO(objective_function, lb, ub, population, probability_random_chicks, max_step, min_step, max_iteration, max_run_time)
+    y_best, x_best = HACO(objective_function, lb, ub, var_types, population, probability_random_chicks, max_step, min_step, max_iteration, max_run_time)
 
     # Print the results
     print(f'Best objective value: {y_best}')
