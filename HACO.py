@@ -2,169 +2,172 @@ import numpy as np
 import matplotlib.pyplot as plt
 import time
 
-
+# Function to calculate the step size based on the current iteration
 def step_size(max_step, min_step, max_iteration, current_iteration):
-    y = max_step + (min_step - max_step)/max_iteration * current_iteration
+    """
+    Calculates the linearly decreasing step size from max_step to min_step over iterations.
+    """
+    y = max_step + (min_step - max_step) / max_iteration * current_iteration
     return y
 
-# locate the best solution and fitness value: x_best, y_best
+# Function to find the best solution and its fitness value from the current population
 def find_best(X, Y):
-    idx_best = np.argmin(Y)
-    x_best = X[idx_best]
-    y_best = Y[idx_best]
+    """
+    Identifies the best solution in the population based on fitness values.
+    Returns the solution with the minimum fitness value and the corresponding value.
+    """
+    idx_best = np.argmin(Y)  # Index of the minimum fitness value
+    x_best = X[idx_best]     # Best solution
+    y_best = Y[idx_best]     # Best fitness value
     return x_best, y_best
 
-# define the main function
-def HACO(objective_function, lb, ub, population=30, probability_random_chicks=0.1, max_step=0.5, min_step=0.01, max_iteration=500, max_run_time=300):
-    start_time = time.process_time()    #track execution time
-    # step 1: initial solution
+# Main HACO (Hen and Chicks Optimization) algorithm
+def HACO(objective_function, lb, ub, population=30, probability_random_chicks=0.1,
+         max_step=0.5, min_step=0.01, max_iteration=500, max_run_time=300):
+    """
+    Hen and Chicks Optimization algorithm for solving optimization problems.
+
+    Parameters:
+    - objective_function: Function to minimize.
+    - lb: List of lower bounds for each decision variable.
+    - ub: List of upper bounds for each decision variable.
+    - population: Number of chicks in the population.
+    - probability_random_chicks: Probability of performing random search for exploration.
+    - max_step: Maximum step size for position updates.
+    - min_step: Minimum step size for position updates.
+    - max_iteration: Maximum number of iterations for the algorithm.
+    - max_run_time: Maximum allowable runtime in seconds.
+    """
+    start_time = time.process_time()  # Start the timer
+
+    # Number of decision variables
     no_variables = len(lb)
-    # convert to numpy array
+
+    # Convert bounds to numpy arrays for easier computation
     lb, ub = np.array(lb), np.array(ub)
 
-    X = np.zeros([population, no_variables])
-    Y = np.zeros(population) # store fitness value
+    # Step 1: Initialize population and evaluate fitness
+    X = np.zeros([population, no_variables])  # Population solutions
+    Y = np.zeros(population)  # Fitness values
 
     for i in range(population):
-        X[i,:] = lb + np.random.uniform(0, 1, no_variables)*(ub - lb)
-        Y[i] = objective_function(X[i, :])
+        X[i, :] = lb + np.random.uniform(0, 1, no_variables) * (ub - lb)  # Random initialization
+        Y[i] = objective_function(X[i, :])  # Evaluate fitness
 
+    # Find the initial best solution
     x_best, y_best = find_best(X, Y)
 
-    history_best_obj_values = []  #keep history of the best fitness value for each iteration
+    # History to track the best objective value across iterations
+    history_best_obj_values = []
+
+    # Main optimization loop
     for k in range(max_iteration):
-        current_step = step_size(max_step, min_step, max_iteration, k)
+        current_step = step_size(max_step, min_step, max_iteration, k)  # Update step size
 
-        # step 2: Guided by the Hen----------------------------------------------------------------
+        # Step 2: Update positions of chicks guided by the Hen (best solution)
         X1 = np.zeros([population, no_variables])
-        Y1 = np.zeros(population)  # store fitness value
+        Y1 = np.zeros(population)
         for i in range(population):
+            X1[i, :] = X[i, :] + current_step * np.random.uniform(-1, 1, no_variables) * (x_best - X[i, :])
 
-            X1[i,:] = X[i,:] + current_step * np.random.uniform(-1, 1, no_variables) * ( x_best - X[i,:] )
-            # X1[i,:] = x_best + current_step*np.random.uniform(-1, 1, no_variables)*( x_best)
+            # Enforce boundary constraints
+            mask = X1[i, :] < lb
+            X1[i, :][mask] = lb[mask]
+            mask = X1[i, :] > ub
+            X1[i, :][mask] = ub[mask]
 
-            ## keep the search space within bounds
-            # check lower bound
-            mask = X1[i,:] < lb
-            X1[i,:][mask] = lb[mask]
-            # check upper bound
-            mask = X1[i,:] > ub
-            X1[i,:][mask] = ub[mask]
-
-        # store objective function value for all the population
+        # Evaluate fitness for updated positions
         for i in range(population):
-            Y1[i] = objective_function(X1[i,:])
+            Y1[i] = objective_function(X1[i, :])
 
-        # step 3: perform greedy selection
+        # Step 3: Perform greedy selection (keep better solutions)
         mask = Y1 < Y
         Y[mask] = Y1[mask]
         X[mask, :] = X1[mask, :]
 
-
-
-        # step 4: Guided by other chicks--------------------------------------------------------------
+        # Step 4: Update positions of chicks guided by peers or random exploration
         X2 = np.zeros([population, no_variables])
-        Y2 = np.zeros(population)  # store fitness value
-
+        Y2 = np.zeros(population)
         for i in range(population):
-
-            if np.random.random() >= probability_random_chicks: #guided by other chicks
-                # select a partner other than self and the best group member
+            if np.random.random() >= probability_random_chicks:  # Guided by peers
+                # Select a peer randomly (not self or the best)
                 while True:
-                    idx =np.random.randint(0, population)
-                    if ( idx != np.argmin(Y) ) and (idx != i):
+                    idx = np.random.randint(0, population)
+                    if idx != np.argmin(Y) and idx != i:
                         break
-                X2[i,:] = X[i,:] + current_step * np.random.uniform(-1, 1, no_variables) * (X[i,:] - X[idx, :])
+                X2[i, :] = X[i, :] + current_step * np.random.uniform(-1, 1, no_variables) * (X[i, :] - X[idx, :])
+            else:  # Random exploration
+                X2[i, :] = lb + np.random.uniform(0, 1, no_variables) * (ub - lb)
 
-            else: # step 5: random chicks-----------------------
-                X2[i,:] = lb + np.random.uniform(0, 1, no_variables)*(ub - lb)
+            # Enforce boundary constraints
+            mask = X2[i, :] < lb
+            X2[i, :][mask] = lb[mask]
+            mask = X2[i, :] > ub
+            X2[i, :][mask] = ub[mask]
 
-            ## keep the search space within bounds
-            # check lower bound
-            mask = X2[i,:] < lb
-            X2[i,:][mask] = lb[mask]
-            # check upper bound
-            mask = X2[i,:] > ub
-            X2[i,:][mask] = ub[mask]
-
-        # store objective function value for all the population
+        # Evaluate fitness for updated solutions
         for i in range(population):
-            Y2[i] = objective_function(X2[i,:])
+            Y2[i] = objective_function(X2[i, :])
 
-        # step 6: perform greedy selection
+        # Step 6: Perform greedy selection
         mask = Y2 < Y
         Y[mask] = Y2[mask]
         X[mask, :] = X2[mask, :]
 
-
-        # current best solution
+        # Update the best solution
         x_best, y_best = find_best(X, Y)
-        # current best fitness value
-        history_best_obj_values.append( y_best )
 
+        # Record the best objective value for this iteration
+        history_best_obj_values.append(y_best)
 
-        #print the current result
-        # print(f'Iteration:{k+1} Solution: {x_best} Objective: {np.min(Y)}')
+        # Print the current best solution and objective value
+        print(f'Iteration:{k+1} Solution: {x_best} Objective: {np.min(Y)}')
 
-        ## break the loop if any of the termination conditions is true
+        # Break the loop if maximum runtime is exceeded
         current_time = time.process_time()
-        if (current_time - start_time) > max_run_time:  # max_run_time in seconds
+        if (current_time - start_time) > max_run_time:
             break
 
-    # # print the best result
-    # print('\n------------------------------------------------------------')
-    # print(f'Elapsed time: {current_time - start_time} seconds')
-    # print(f'Best objective value : {y_best}')
-    # print(f'Best solution        : {x_best}')
-
-    # # create plot
-    # plt.figure(dpi = 300, figsize =(6, 4), constrained_layout=True )
-    # plt.plot( range(1, len(history_best_obj_values)+1), history_best_obj_values, color='r')
-    # plt.xlabel('Iterations')
-    # plt.ylabel('Objective function value')
-    # plt.show()
-
+    # Plot the objective function value over iterations
+    plt.figure(dpi=300, figsize=(6, 4), constrained_layout=True)
+    plt.plot(range(1, len(history_best_obj_values) + 1), history_best_obj_values, color='r')
+    plt.xlabel('Iterations')
+    plt.ylabel('Objective Function Value')
+    plt.title('Convergence of HACO Algorithm')
+    plt.show()
 
     return y_best, x_best
 
-#===============================================================================
 
+# Example usage with the Ackley function
 if __name__ == '__main__':
-
-    #ACKLEY FUNCTION; obj value:0  Soln:[0, 0]
-    d = 2 # dimension of the problem
+    # Ackley function (2D optimization problem)
+    d = 2  # Dimension
     def objective_function(xx):
         a = 20
         b = 0.2
-        c = 2*np.pi
+        c = 2 * np.pi
+        sum1 = sum([xi ** 2 for xi in xx])
+        sum2 = sum([np.cos(c * xi) for xi in xx])
+        term1 = -a * np.exp(-b * np.sqrt(sum1 / d))
+        term2 = -np.exp(sum2 / d)
+        return term1 + term2 + a + np.exp(1)
 
-        sum1 = 0
-        sum2 = 0
-        for ii in range(d):
-            xi = np.array(xx[ii])
-            sum1 = sum1 + xi * xi
-            sum2 = sum2 + np.cos(c*xi)
-
-        term1 = -a*np.exp(-b*np.sqrt(sum1/d))
-        term2 = -np.exp(sum2/d)
-        y = term1 + term2 + a + np.exp(1)
-        return y
-
+    # Bounds for variables
     lb = [-5] * d
     ub = [5] * d
 
-
-
-    # parameters
+    # Algorithm parameters
     population = 30
-    probability_random_chicks = 0.0
+    probability_random_chicks = 0.1
     max_step = 0.99
     min_step = 0.01
-    max_iteration = 200
-    max_run_time = 300  # max_run_time in seconds
+    max_iteration = 100
+    max_run_time = 300
 
-    y_best, x_best =  HACO(objective_function, lb, ub, population, probability_random_chicks, max_step, min_step, max_iteration, max_run_time)
+    # Run the HACO algorithm
+    y_best, x_best = HACO(objective_function, lb, ub, population, probability_random_chicks, max_step, min_step, max_iteration, max_run_time)
 
+    # Print the results
     print(f'Best objective value: {y_best}')
     print(f'Best solution: {x_best}')
-
