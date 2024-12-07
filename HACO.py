@@ -1,186 +1,287 @@
+'''
+Author: Mamunur Rahman
+Email: mamunur.ipe05@gmail.com
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of 
+this software and associated documentation files (the "Software"), to deal in 
+the Software without restriction, including without limitation the rights to use, 
+copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the 
+Software, and to permit persons to whom the Software is furnished to do so, 
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, 
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL 
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER 
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, 
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE 
+SOFTWARE.
+'''
+
 import numpy as np
 import matplotlib.pyplot as plt
 import time
+import sys
+import warnings
 
-# Function to calculate the step size based on iteration
-def step_size(max_step, min_step, max_iteration, current_iteration):
-    # Linearly decreases the step size from max_step to min_step over iterations
-    y = max_step + (min_step - max_step) / max_iteration * current_iteration
-    return y
+# Chicken class to represent each individual in the population
+class Chicken:
+    def __init__(self, position, fitness, is_hen=False):
+        self.position = position  # Position (solution) of the chicken
+        self.fitness = fitness  # Fitness value of the chicken
+        self.is_hen = is_hen  # Flag indicating if the chicken is the Hen
 
-# Function to find the best solution and its fitness value from the current population
-def find_best(X, Y):
-    idx_best = np.argmin(Y)  # Index of the minimum fitness value
-    x_best = X[idx_best]     # Best solution
-    y_best = Y[idx_best]     # Best fitness value
-    return x_best, y_best
+    def update_position(self, new_position):
+        """Update the chicken's position."""
+        self.position = new_position
 
-# Main HACO (Hen and Chicks Optimization) algorithm
-def HACO(objective_function, lb, ub, var_types, population=30, probability_random_chicks=0.1,
-         max_step=0.5, min_step=0.01, max_iteration=500, max_run_time=300):
-    """
-    Parameters:
-    - objective_function: Function to minimize
-    - lb: Lower bounds for decision variables
-    - ub: Upper bounds for decision variables
-    - var_types: List indicating the type of each variable ('float' or 'int')
-    - population: Number of chicks in the population
-    - probability_random_chicks: Probability of using random search
-    - max_step, min_step: Maximum and minimum step sizes
-    - max_iteration: Maximum number of iterations
-    - max_run_time: Maximum allowable runtime in seconds
-    """
-    start_time = time.process_time()  # Start the timer
+    def update_fitness(self, new_fitness):
+        """Update the chicken's fitness."""
+        self.fitness = new_fitness
 
-    # Number of decision variables
-    no_variables = len(lb)
+    def set_as_hen(self):
+        """Set the chicken as the Hen (leader)."""
+        self.is_hen = True
 
-    # Convert bounds to numpy arrays for easier computation
-    lb, ub = np.array(lb), np.array(ub)
 
-    # Step 1: Initialize population and evaluate fitness
-    X = np.zeros([population, no_variables])  # Population solutions
-    Y = np.zeros(population)  # Fitness values
+# HACO algorithm class implementing Hen and Chicks Optimization
+class HACO:
+    def __init__(self, objective_function, lb, ub, var_types, population=30, probability_random_chicks=0.1,
+                 max_step=0.5, min_step=0.01, max_iteration=500, max_run_time=2*3600,
+                 plot_results=True, verbose=False, progress_bar = True):
+        """
+        Initialize the HACO algorithm parameters.
 
-    for i in range(population):
-        for j in range(no_variables):
-            if var_types[j] == 'float':
-                X[i, j] = lb[j] + np.random.uniform(0, 1) * (ub[j] - lb[j])  # Random initialization for floats
-            elif var_types[j] == 'int':
-                X[i, j] = np.random.randint(lb[j], ub[j] + 1)  # Random initialization for integers
-        Y[i] = objective_function(X[i, :])  # Evaluate fitness
+        Parameters:
+        - objective_function: The function to minimize.
+        - lb: Lower bounds for the variables.
+        - ub: Upper bounds for the variables.
+        - var_types: Types of the variables. Example: ['float', 'int']
+        - population: Number of chickens in the population.
+        - probability_random_chicks: Probability of random exploration for chicks.
+        - max_step: Maximum step size for position updates.
+        - min_step: Minimum step size for position updates.
+        - max_iteration: Maximum number of iterations.
+        - max_run_time: Maximum runtime in seconds.
+        - plot_results: Whether to plot the objective function values over iterations.
+        - verbose: Whether to print iteration details.
+        - progress_bar: Whether to show the progress bar. Verbose need to be disabled to show the progress bar.
+        """
+        self.objective_function = objective_function
+        self.lb = np.array(lb)
+        self.ub = np.array(ub)
+        self.var_types = var_types
+        self.population = population
+        self.probability_random_chicks = probability_random_chicks
+        self.max_step = max_step
+        self.min_step = min_step
+        self.max_iteration = max_iteration
+        self.max_run_time = max_run_time
+        self.plot_results = plot_results
+        self.verbose = verbose
+        self.progress_bar = progress_bar
+        self.history_best_obj_values = []
 
-    # Find the initial best solution
-    x_best, y_best = find_best(X, Y)
+    def step_size(self, current_iteration):
+        """
+        Calculate the step size based on the current iteration.
+        Linearly decreases from max_step to min_step over iterations.
+        """
+        return self.max_step + (self.min_step - self.max_step) / self.max_iteration * current_iteration
 
-    # History to track the best objective value across iterations
-    history_best_obj_values = []
+    def find_best(self, chickens):
+        """
+        Identify the chicken with the best (minimum) fitness value in a population of chickens.
+        Returns the position and fitness of the best chicken.
+        """
+        best_chicken = min(chickens, key=lambda x: x.fitness)
+        return best_chicken.position, best_chicken.fitness
 
-    # Main optimization loop
-    for k in range(max_iteration):
-        current_step = step_size(max_step, min_step, max_iteration, k)  # Update step size
+    def initialize_population(self):
+        """
+        Initialize the chicken population with random positions and compute fitness values.
+        """
+        chickens = []
+        for _ in range(self.population):
+            position = []
+            for lb_i, ub_i, var_type in zip(self.lb, self.ub, self.var_types):
+                if var_type == 'float':
+                    value = np.random.uniform(lb_i, ub_i)
+                elif var_type == 'int':
+                    value = np.random.randint(lb_i, ub_i + 1)
+                else:
+                    raise ValueError("Variable type must be 'float' or 'int'")
+                position.append(value)
 
-        # Step 2: Update the positions of the chicks guided by the Hen
-        X1 = np.zeros([population, no_variables])
-        Y1 = np.zeros(population)
-        for i in range(population):
-            for j in range(no_variables):
-                if var_types[j] == 'float':
-                    X1[i, j] = X[i, j] + current_step * np.random.uniform(-1, 1) * (x_best[j] - X[i, j])
-                elif var_types[j] == 'int':
-                    X1[i, j] = X[i, j] + current_step * np.random.uniform(-1, 1) * (x_best[j] - X[i, j])
-                    X1[i, j] = np.round(X1[i, j])  # Round to nearest integer for integer variables
+            position = np.array(position)
+            fitness = self.objective_function(position)
+            chickens.append(Chicken(position, fitness))
+        return chickens
 
-            # Enforce boundary constraints
-            if var_types[j] == 'float':
-                X1[i, j] = np.clip(X1[i, j], lb[j], ub[j])  # Clipping for float variables
-            elif var_types[j] == 'int':
-                X1[i, j] = np.clip(np.round(X1[i, j]), lb[j], ub[j])  # Clip and round for integer variables
+    def enforce_variable_types(self, position):
+        """
+        Ensure variables conform to their specified types ('int' or 'float').
+        """
+        for i, var_type in enumerate(self.var_types):
+            if var_type == 'int':
+                position[i] = round(position[i])
+        return position
 
-        # Evaluate fitness for updated positions
-        for i in range(population):
-            Y1[i] = objective_function(X1[i, :])
+    def show_progress(self, count, total):
+        bar_len = 50
+        filled_len = int(round(bar_len * count / float(total)))
 
-        # Step 3: Perform greedy selection (keep better solutions)
-        mask = Y1 < Y
-        Y[mask] = Y1[mask]
-        X[mask, :] = X1[mask, :]
+        percent = round(100.0 * count / total, 1)
+        bar = 'RUNNING: ' + '|' * filled_len + '-' * (bar_len - filled_len)
+        sys.stdout.write(f'\r{bar} {percent}% complete')
+        sys.stdout.flush()
+        # time.sleep(0.001)
 
-        # Step 4:Update positions of chicks guided by peers or random exploration
-        X2 = np.zeros([population, no_variables])
-        Y2 = np.zeros(population)
-        for i in range(population):
-            if np.random.random() >= probability_random_chicks:  # Guided by their peers
-                # Select a partner other than self and the best peer
-                while True:
-                    idx = np.random.randint(0, population)
-                    if idx != np.argmin(Y) and idx != i:
-                        break
-                for j in range(no_variables):
-                    if var_types[j] == 'float':
-                        X2[i, j] = X[i, j] + current_step * np.random.uniform(-1, 1) * (X[i, j] - X[idx, j])
-                    elif var_types[j] == 'int':
-                        X2[i, j] = X[i, j] + current_step * np.random.uniform(-1, 1) * (X[i, j] - X[idx, j])
-                        X2[i, j] = np.round(X2[i, j])  # Round to nearest integer for integer variables
+    def run(self):
+        """
+        Run the HACO optimization algorithm.
+        Returns:
+        - Best fitness value found.
+        - Best solution found.
+        """
+        start_time = time.process_time()
+        chickens = self.initialize_population()
 
-            else:  # Random chicks (exploration)
-                for j in range(no_variables):
-                    if var_types[j] == 'float':
-                        X2[i, j] = lb[j] + np.random.uniform(0, 1) * (ub[j] - lb[j])
-                    elif var_types[j] == 'int':
-                        X2[i, j] = np.random.randint(lb[j], ub[j] + 1)
+        # Find the initial best solution and assign the hen in that location
+        x_best, y_best = self.find_best(chickens)
+        best_chicken = Chicken(x_best, y_best)
+        best_chicken.set_as_hen()
 
-            # Enforce boundary constraints
-            for j in range(no_variables):
-                if var_types[j] == 'float':
-                    X2[i, j] = np.clip(X2[i, j], lb[j], ub[j])  # Clipping for float variables
-                elif var_types[j] == 'int':
-                    X2[i, j] = np.clip(np.round(X2[i, j]), lb[j], ub[j])  # Clip and round for integer variables
+        for k in range(self.max_iteration):
 
-        # Evaluate fitness for updated positions of the chicks
-        for i in range(population):
-            Y2[i] = objective_function(X2[i, :])
+            # Calculate the step size for the current iteration
+            current_step = self.step_size(current_iteration = k)
 
-        # Step 6: Perform greedy selection
-        mask = Y2 < Y
-        Y[mask] = Y2[mask]
-        X[mask, :] = X2[mask, :]
+            # Update the positions of the chicks guided by the Hen
+            new_chickens = []
+            for chicken in chickens:
+                if chicken.is_hen:
+                    new_chickens.append(chicken)
+                    continue
+                new_position = chicken.position + current_step * np.random.uniform(-1, 1, len(chicken.position)) * (best_chicken.position - chicken.position)
+                new_position = np.clip(new_position, self.lb, self.ub)
+                new_position = self.enforce_variable_types(new_position)
+                new_fitness = self.objective_function(new_position)
+                new_chickens.append(Chicken(new_position, new_fitness))
 
-        # Update the best solution
-        x_best, y_best = find_best(X, Y)
+            # Perform greedy selection (keep better solutions)
+            for i, chicken in enumerate(new_chickens):
+                if chicken.fitness < chickens[i].fitness:
+                    chickens[i].update_position(chicken.position)
+                    chickens[i].update_fitness(chicken.fitness)
 
-        # Record the best objective value for this iteration
-        history_best_obj_values.append(y_best)
+            # Update positions of the chicks guided by their peers or random exploration
+            new_chickens_peer_guided = []
+            for i, chicken in enumerate(chickens):
+                if np.random.random() >= self.probability_random_chicks:
+                    while True:
+                        idx = np.random.randint(0, self.population)
+                        if idx != np.argmin([c.fitness for c in chickens]) and idx != i:
+                            break
+                    new_position = chicken.position + current_step * np.random.uniform(-1, 1, len(chicken.position)) * (chicken.position - chickens[idx].position)
+                else:
+                    new_position = np.array([
+                        np.random.uniform(lb_i, ub_i) if var_type == "float" else np.random.randint(lb_i, ub_i + 1)
+                        for lb_i, ub_i, var_type in zip(self.lb, self.ub, self.var_types)
+                    ])
+                new_position = np.clip(new_position, self.lb, self.ub)
+                new_position = self.enforce_variable_types(new_position)
+                new_fitness = self.objective_function(new_position)
+                new_chickens_peer_guided.append(Chicken(new_position, new_fitness))
 
-        # print the current result
-        print(f'Iteration:{k+1} Solution: {x_best} Objective: {np.min(Y)}')
+            # Perform greedy selection for peer-guided chicks
+            for i, chicken in enumerate(new_chickens_peer_guided):
+                if chicken.fitness < chickens[i].fitness:
+                    chickens[i].update_position(chicken.position)
+                    chickens[i].update_fitness(chicken.fitness)
 
-        # Break the loop if maximum runtime is exceeded
-        current_time = time.process_time()
-        if (current_time - start_time) > max_run_time:
-            break
+            # Update the best solution
+            x_best, y_best = self.find_best(chickens)
+            best_chicken.update_position(x_best)
+            best_chicken.update_fitness(y_best)
 
-    # create plot
-    plt.figure(dpi = 300, figsize =(6, 4), constrained_layout=True )
-    plt.plot( range(1, len(history_best_obj_values)+1), history_best_obj_values, color='r')
-    plt.xlabel('Iterations')
-    plt.ylabel('Objective function value')
-    plt.show()
+            self.history_best_obj_values.append(best_chicken.fitness)
 
-    return y_best, x_best
+            if self.verbose:  # Print iteration details if verbose is True
+                print(f'Iteration:{k + 1} Objective: {best_chicken.fitness}')
 
-# Example usage with the Ackley function (using both float and integer variables)
+            # show progress bar
+            if self.progress_bar and (self.verbose==False):
+                self.show_progress(k+1, self.max_iteration)
+
+            # Terminate the algorithm if runtime limit exceeds
+            current_time = time.process_time()
+            if (current_time - start_time) > self.max_run_time:
+                warnings.warn("The algorithm terminated early because the provided maximum runtime limit was exceeded!", UserWarning)
+                break
+
+        if self.plot_results:  # Plot results if plot_results is True
+            plt.figure(dpi=300, figsize=(6, 4), constrained_layout=True)
+            plt.plot(range(1, len(self.history_best_obj_values) + 1), self.history_best_obj_values, color='r')
+            plt.xlabel('Iterations')
+            plt.ylabel('Objective function value')
+            plt.show()
+
+        return best_chicken.fitness, best_chicken.position
+
+
 if __name__ == '__main__':
-    # Ackley Function
-    d = 4  # Dimension of the function
+    """
+    Example usage of the HACO optimizer with the Ackley Function.
+    Learn more about the Ackley Function: https://www.sfu.ca/~ssurjano/ackley.html
+    """
+    # Define the dimension of the function
+    d = 8
+
     def objective_function(xx):
+        """
+        Ackley function for optimization testing.
+
+        It is a multi-modal function commonly used as a performance test problem
+        in optimization. The global minimum is at the origin, where f(x) = 0.
+        """
         a = 20
         b = 0.2
         c = 2 * np.pi
-        sum1 = sum([xi ** 2 for xi in xx])
-        sum2 = sum([np.cos(c * xi) for xi in xx])
+        sum1 = np.sum(np.square(xx))  # Sum of squares
+        sum2 = np.sum(np.cos(c * xx))  # Sum of cosines
         term1 = -a * np.exp(-b * np.sqrt(sum1 / d))
         term2 = -np.exp(sum2 / d)
         return term1 + term2 + a + np.exp(1)
 
-    # Bounds for variables
-    lb = [-5]*d  # First variable float, second variable int
-    ub = [5]*d  # First variable float, second variable int
+    # Define bounds and variable types
+    lb = [-5] * d  # Lower bounds of the variables
+    ub = [5] * d   # Upper bounds of the variables
+    var_types = ['float', 'float', 'float', 'float', 'int', 'int', 'int', 'int']  # First 4 variables are floats, last 4 are integers
 
-    # Variable types (float for the first two variable, int for the last two variables)
-    var_types = ['float', 'float', 'int', 'int']
+    # Instantiate the HACO optimizer
+    optimizer = HACO(
+        objective_function=objective_function,
+        lb=lb,
+        ub=ub,
+        var_types=var_types,
+        population=30,
+        probability_random_chicks=0.1,
+        max_step=0.99,
+        min_step=0.01,
+        max_iteration=1000,
+        plot_results=True,  # Enable result plotting
+        verbose=False       # Disable iteration details
+    )
 
-    # Algorithm parameters
-    population = 30
-    probability_random_chicks = 0.1
-    max_step = 0.99
-    min_step = 0.01
-    max_iteration = 100
-    max_run_time = 300
-
-    # Run the HACO algorithm
-    y_best, x_best = HACO(objective_function, lb, ub, var_types, population, probability_random_chicks, max_step, min_step, max_iteration, max_run_time)
+    # Run the optimizer
+    y_best, x_best = optimizer.run()
 
     # Print the results
-    print(f'Best objective value: {y_best}')
-    print(f'Best solution: {x_best}')
+    print("\nOptimization Results:")
+    print(f"Best objective value: {y_best:.6f}")
+    print(f"Best solution: {x_best}")
+    
